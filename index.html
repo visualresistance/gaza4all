@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <title>Gaza & West Bank — Move Over Any City</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <!-- Ensure relative paths resolve from this file’s folder -->
+  <base href="./">
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,7 +16,7 @@
     html, body, #map { height: 100%; margin: 0; }
     .ui {
       position: absolute; z-index: 1000; top: 10px; left: 10px; right: 10px;
-      display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px;
+      display: grid; grid-template-columns: 1.25fr 1fr; gap: 8px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
     }
     .panel {
@@ -45,11 +47,21 @@
     .status {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
       background: rgba(255,255,255,0.96); border: 1px solid #d0d0d0;
-      border-radius: 8px; padding: 8px 10px; font-size: 12px; min-width: 260px;
+      border-radius: 8px; padding: 8px 10px; font-size: 12px; min-width: 280px; max-width: 360px;
+      line-height: 1.35;
+      white-space: normal;
     }
     .ok { color: #166534; }     /* green-800 */
     .warn { color: #92400e; }   /* amber-800 */
     .err { color: #991b1b; }    /* red-800 */
+
+    .errorbar {
+      position: absolute; top: 90px; right: 10px; z-index: 1001;
+      background: #fff1f2; color: #991b1b; border: 1px solid #fecdd3;
+      border-radius: 8px; padding: 8px 10px; font-size: 12px; max-width: 360px; display: none;
+    }
+    .small { font-size: 11px; color: #555; }
+    code { background: #f6f6f6; padding: 1px 3px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -69,6 +81,10 @@
         <label id="lblGaza"><input type="radio" name="active" value="gaza"> Active: Gaza</label>
         <label id="lblWB"><input type="radio" name="active" value="wb"> Active: West Bank</label>
       </div>
+      <div class="row" style="margin-top:6px;">
+        <button id="testGaza">Test Gaza fetch</button>
+        <button id="testWB">Test West Bank fetch</button>
+      </div>
       <div style="margin-top:6px;font-size:12px;color:#444;">
         Tip: Click a polygon to select it; then drag it. “Place here” drops a fresh copy at the map center.
       </div>
@@ -81,7 +97,7 @@
         <button id="clearPOI">Clear POI</button>
       </div>
       <div style="margin-top:6px;font-size:12px;color:#444;">
-        Toggle POI with the Layer Control (top-right).
+        Use the map’s Layer Control (top-right) to toggle the POI overlay.
       </div>
     </div>
   </div>
@@ -92,10 +108,9 @@
     <div><span class="swatch" style="background:#3b82f6;"></span>West Bank (draggable)</div>
   </div>
 
-  <!-- Status -->
-  <div class="status" id="statusBox">
-    Loading polygons…
-  </div>
+  <!-- Status + Error -->
+  <div class="status" id="statusBox">Loading polygons…</div>
+  <div class="errorbar" id="errorBar"></div>
 
   <script>
     // --- Map (start in Los Angeles) ---
@@ -106,41 +121,74 @@
 
     const layerControl = L.control.layers({ "OpenStreetMap": osm }, {}, { collapsed: false }).addTo(map);
     const statusBox = document.getElementById('statusBox');
+    const errorBar = document.getElementById('errorBar');
 
-    // --- Remote RAW URLs (your repo) + local fallbacks ---
-    const GAZA_URL = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/gaza.geojson';
-    const WB_URL   = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/west_bank.geojson';
-    const GAZA_LOCAL = 'data/gaza.geojson';
-    const WB_LOCAL   = 'data/west_bank.geojson';
-
+    function showError(msg) {
+      errorBar.style.display = 'block';
+      errorBar.innerHTML = msg;
+      console.error('[ERROR]', msg.replace(/<[^>]*>/g, ''));
+    }
+    function clearError() {
+      errorBar.style.display = 'none';
+      errorBar.textContent = '';
+    }
     function updateStatus(msg, cls='') {
       statusBox.className = 'status ' + cls;
       statusBox.innerHTML = msg;
     }
-    async function fetchJSON(url) {
-      const r = await fetch(url, { cache: 'no-store' });
-      if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
-      return r.json();
+
+    // --- Preferred: LOCAL files in same repo/folder structure ---
+    const GAZA_LOCAL = 'data/gaza.geojson';
+    const WB_LOCAL   = 'data/west_bank.geojson';
+    // --- Fallback: public RAW URLs (your repo must be public) ---
+    const GAZA_URL = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/gaza.geojson';
+    const WB_URL   = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/west_bank.geojson';
+
+    async function fetchJsonRobust(url) {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} for ${url}`);
+      }
+      const ct = res.headers.get('content-type') || '';
+      const text = await res.text();
+      // If server returns HTML (e.g., 404 page) the JSON parse would be confusing; catch it with a helpful message.
+      if (!/application\/json|geo\+json|json/i.test(ct)) {
+        // Try to parse anyway (some hosts send text/plain) — if it fails, throw with preview
+        try { return JSON.parse(text); }
+        catch (e) {
+          const preview = text.slice(0, 200).replace(/[<>]/g, s => ({'<':'&lt;','>':'&gt;'}[s]));
+          throw new Error(`Non-JSON response from ${url}. Content-Type: ${ct}. First 200 chars:\n${preview}`);
+        }
+      }
+      return JSON.parse(text);
     }
-    async function loadTemplates() {
+
+    async function loadTemplateWithFallback(localUrl, remoteUrl, label) {
       try {
-        const [g, w] = await Promise.all([fetchJSON(GAZA_URL), fetchJSON(WB_URL)]);
-        return { gaza: g, wb: w, src: 'github-raw' };
-      } catch (e) {
-        console.warn('RAW fetch failed, falling back to local /data/*.geojson', e);
-        const [g, w] = await Promise.all([fetchJSON(GAZA_LOCAL), fetchJSON(WB_LOCAL)]);
-        return { gaza: g, wb: w, src: 'local' };
+        const j = await fetchJsonRobust(localUrl);
+        console.log(`${label}: loaded local`, j);
+        return { fc: j, src: 'local' };
+      } catch (e1) {
+        console.warn(`${label}: local fetch failed`, e1);
+        try {
+          const j = await fetchJsonRobust(remoteUrl);
+          console.log(`${label}: loaded from RAW`, j);
+          return { fc: j, src: 'github-raw' };
+        } catch (e2) {
+          const msg = `<b>${label} load failed</b><br><span class="small">Local error:</span> ${e1.message}<br><span class="small">RAW error:</span> ${e2.message}`;
+          showError(msg);
+          throw e2;
+        }
       }
     }
 
     // --- Layers & state ---
-    const overlays = {};
-    const poiLayer = L.layerGroup();
-    // Register POI in the control right away so you can toggle it
+    const poiLayer = L.layerGroup();  // register now so you can toggle it even before loading
     layerControl.addOverlay(poiLayer, "Schools & Libraries (OSM)");
 
     let gazaTemplate = null, wbTemplate = null;
     let gazaLayer = null, wbLayer = null;
+
     const BASE_STYLE_GAZA = { color: '#ef4444', weight: 2, fillOpacity: 0.15 };
     const BASE_STYLE_WB   = { color: '#3b82f6', weight: 2, fillOpacity: 0.15 };
     const ACTIVE_BUMP     = { weight: 4, fillOpacity: 0.30 };
@@ -159,13 +207,13 @@
       if (which === 'wb'   && wbLayer)   wbLayer.bringToFront();
       applyActiveStyles();
     }
+
     function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
     function geojsonToLayer(fc, style, whichKey) {
       const layer = L.geoJSON(fc, {
         style,
         onEachFeature: (f, lyr) => {
-          lyr.__which = whichKey;
           if (lyr.dragging) lyr.dragging.enable();
           lyr.on('click', () => setActive(whichKey));
           lyr.on('dragstart', () => { setActive(whichKey); lyr.setStyle({ opacity: 0.8 }); });
@@ -177,13 +225,19 @@
     }
 
     function getCenterOfFC(fc) {
-      const tmp = L.geoJSON(fc); const c = tmp.getBounds().getCenter(); tmp.remove(); return c;
+      const tmp = L.geoJSON(fc);
+      const c = tmp.getBounds().getCenter();
+      tmp.remove();
+      return c;
     }
     function translateFC(fc, dLat, dLng) {
       const out = clone(fc);
       function shift(coords) {
-        if (typeof coords[0][0] === 'number') return coords.map(([lng,lat]) => [lng + dLng, lat + dLat]);
-        return coords.map(shift);
+        if (typeof coords[0][0] === 'number') {
+          return coords.map(([lng,lat]) => [lng + dLng, lat + dLat]);
+        } else {
+          return coords.map(shift);
+        }
       }
       out.features = out.features.map(feat => {
         const g = feat.geometry;
@@ -196,14 +250,14 @@
       const mC = map.getCenter();
       const tC = getCenterOfFC(templateFC);
       const moved = translateFC(templateFC, mC.lat - tC.lat, mC.lng - tC.lng);
-      const lyr = geojsonToLayer(moved, style, whichKey).addTo(map);
-      return lyr;
+      return geojsonToLayer(moved, style, whichKey).addTo(map);
     }
     function removeLayerIfAny(layerRef) { if (layerRef && map.hasLayer(layerRef)) map.removeLayer(layerRef); }
     function clearPolys() {
       removeLayerIfAny(gazaLayer); gazaLayer = null;
       removeLayerIfAny(wbLayer);   wbLayer = null;
       activeKey = null; applyActiveStyles();
+      updateStatus('Cleared polygons from map.', 'ok');
     }
     function resetToOriginalGeography() {
       clearPolys();
@@ -216,23 +270,23 @@
         layerControl.addOverlay(wbLayer, "West Bank (draggable)");
       }
       setActive('gaza');
-      updateStatus(`Reset to original geography.`, 'ok');
+      updateStatus('Reset to original geography.', 'ok');
     }
     function placeGazaHere() {
-      if (!gazaTemplate) return alert('Gaza template not loaded.');
+      if (!gazaTemplate) return showError('Gaza template not loaded.');
       removeLayerIfAny(gazaLayer);
       gazaLayer = placeAtCenter(gazaTemplate, BASE_STYLE_GAZA, 'gaza');
       layerControl.addOverlay(gazaLayer, "Gaza (draggable)");
       setActive('gaza');
-      updateStatus(`Placed Gaza at map center.`, 'ok');
+      updateStatus('Placed Gaza at map center.', 'ok');
     }
     function placeWBHere() {
-      if (!wbTemplate) return alert('West Bank template not loaded.');
+      if (!wbTemplate) return showError('West Bank template not loaded.');
       removeLayerIfAny(wbLayer);
       wbLayer = placeAtCenter(wbTemplate, BASE_STYLE_WB, 'wb');
       layerControl.addOverlay(wbLayer, "West Bank (draggable)");
       setActive('wb');
-      updateStatus(`Placed West Bank at map center.`, 'ok');
+      updateStatus('Placed West Bank at map center.', 'ok');
     }
 
     async function loadPOI() {
@@ -270,15 +324,12 @@
         }
         if (points.length) {
           points.forEach(p => p.addTo(poiLayer));
-          // Leave visibility to the checkbox; uncomment next line if you want it to auto-show:
-          // poiLayer.addTo(map);
           updateStatus(`Loaded ${points.length} POI. Toggle with the layer control.`, 'ok');
         } else {
           updateStatus('No schools/libraries found in current view. Zoom in and try again.', 'warn');
         }
       } catch (e) {
-        console.error(e);
-        updateStatus('Overpass query failed. Try again later or zoom to a smaller area.', 'err');
+        showError(`Overpass query failed: ${e.message}`);
       }
     }
     function clearPOI() {
@@ -294,35 +345,51 @@
     document.getElementById('clear').addEventListener('click', clearPolys);
     document.getElementById('loadPOI').addEventListener('click', loadPOI);
     document.getElementById('clearPOI').addEventListener('click', clearPOI);
+    document.getElementById('testGaza').addEventListener('click', async () => {
+      clearError();
+      try {
+        const { fc, src } = await loadTemplateWithFallback(GAZA_LOCAL, GAZA_URL, 'Gaza');
+        alert(`Gaza OK from ${src}. features: ${fc.features?.length || 0}`);
+      } catch (e) {}
+    });
+    document.getElementById('testWB').addEventListener('click', async () => {
+      clearError();
+      try {
+        const { fc, src } = await loadTemplateWithFallback(WB_LOCAL, WB_URL, 'West Bank');
+        alert(`West Bank OK from ${src}. features: ${fc.features?.length || 0}`);
+      } catch (e) {}
+    });
     document.querySelectorAll('input[name="active"]').forEach(r => r.addEventListener('change', e => setActive(e.target.value)));
 
     // --- Init ---
     (async () => {
       try {
-        const { gaza, wb, src } = await loadTemplates();
-        gazaTemplate = gaza; wbTemplate = wb;
+        clearError();
+        const [{ fc: g, src: gs }, { fc: w, src: ws }] = await Promise.all([
+          loadTemplateWithFallback(GAZA_LOCAL, GAZA_URL, 'Gaza'),
+          loadTemplateWithFallback(WB_LOCAL,   WB_URL,   'West Bank')
+        ]);
+        gazaTemplate = g; wbTemplate = w;
 
-        const gCount = (gaza.features?.length ?? 0);
-        const wCount = (wb.features?.length ?? 0);
+        const gCount = (g.features?.length ?? 0);
+        const wCount = (w.features?.length ?? 0);
 
         // Place both at current center so they are visible right away
         placeGazaHere();
         placeWBHere();
-
-        // tiny nudge so they don't perfectly overlap visually
         if (wbLayer) wbLayer.bringToFront();
 
         updateStatus(
-          `Loaded <b>gaza.geojson</b> (features: ${gCount}) & <b>west_bank.geojson</b> (features: ${wCount}) from <b>${src}</b>.`,
+          `Loaded <b>gaza.geojson</b> (features: ${gCount}, src: ${gs}) & ` +
+          `<b>west_bank.geojson</b> (features: ${wCount}, src: ${ws}).`,
           (gCount && wCount) ? 'ok' : 'warn'
         );
       } catch (e) {
-        console.error(e);
-        updateStatus("Failed to load polygons. Check RAW URLs or put files in <code>/data</code>.", 'err');
+        // loadTemplateWithFallback already shows a detailed message
+        updateStatus("Failed to load polygons. See error panel & console.", 'err');
       }
     })();
   </script>
 </body>
 </html>
-
 
