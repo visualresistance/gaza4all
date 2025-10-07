@@ -18,22 +18,57 @@
       position: absolute; z-index: 1000; top: 10px; left: 10px;
       background: rgba(255,255,255,0.95); border: 1px solid #ddd; border-radius: 8px;
       padding: 8px; display: grid; gap: 6px; font-family: system-ui, sans-serif;
-      max-width: 320px;
+      max-width: 360px;
     }
     button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff; }
     button:hover { background: #f6f6f6; }
     .status { font-size: 12px; color: #444; }
     .error { color: #b00020; }
+
+    /* --- Simple modal --- */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      display: none; align-items: center; justify-content: center; z-index: 1500;
+      padding: 16px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-card {
+      background: #ffffff; border-radius: 12px; border: 1px solid #e5e7eb;
+      max-width: 560px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+      padding: 18px 16px 14px;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+    }
+    .modal-title { font-size: 16px; font-weight: 600; margin: 0; }
+    .modal-close {
+      background: transparent; border: none; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px;
+    }
+    .modal-body { font-size: 14px; color: #222; line-height: 1.45; white-space: pre-wrap; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
   <div class="controls">
+    <button id="btnReadme">ReadMe</button>
     <button id="btnGaza">Add Gaza here</button>
     <button id="btnWB">Add West Bank here</button>
     <button id="btnPOI">Load Schools & Libraries (in view)</button>
     <div class="status" id="status">Ready</div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="readmeModal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-card" role="document">
+      <div class="modal-header">
+        <h3 class="modal-title">About this map</h3>
+        <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+This map is meant for you to get a better sense of the size of Gaza and the West Bank. The ongoing destruction of Gaza and the genocide and displacement of Palestinians is unimaginable. Try for a moment to see yourself in Gaza
+      </div>
+    </div>
   </div>
 
   <script>
@@ -89,19 +124,13 @@
       });
       return out;
     }
-
     function geojsonToLayerDraggable(fc, style){
-      // Create the layer (no dragging yet)
       const layer = L.geoJSON(fc, { style });
-      // Enable dragging ONLY after it's added to the map (fixes getRenderer error)
       layer.on('add', () => {
-        layer.eachLayer(l => {
-          if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable();
-        });
+        layer.eachLayer(l => { if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable(); });
       });
       return layer;
     }
-
     function placeAtCenter(templateFC, style){
       const mC=map.getCenter(), tC=getCenter(templateFC);
       const moved = translateFC(templateFC, mC.lat - tC.lat, mC.lng - tC.lng);
@@ -157,8 +186,30 @@
         setStatus(`Loaded ${n} POI`);
       } catch(e){ setStatus('POI load failed: '+e.message, true); alert(e.message); }
     });
+// Modal wiring
+const modal = document.getElementById('readmeModal');
+const btnReadme = document.getElementById('btnReadme');
+const btnClose = document.getElementById('modalClose');
 
-    console.log('Using RAW URLs:', GAZA_URL, WB_URL);
+function openModal(){ 
+  modal.classList.add('show'); 
+  modal.setAttribute('aria-hidden','false'); 
+}
+function closeModal(){ 
+  modal.classList.remove('show'); 
+  modal.setAttribute('aria-hidden','true'); 
+}
+
+btnReadme.addEventListener('click', openModal);
+btnClose.addEventListener('click', closeModal);
+modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
+window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
+
+// ✅ Auto-open once per visitor, but allow manual reopening via ReadMe button
+if (!localStorage.getItem('readmeShown')) {
+  openModal();
+  localStorage.setItem('readmeShown', 'true');
+
   </script>
 </body>
 </html>
