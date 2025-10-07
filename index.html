@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>gaza4all — simple</title>
+  <title>gaza4all — size compare</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
   <!-- Leaflet -->
@@ -14,18 +14,21 @@
 
   <style>
     html, body, #map { height: 100%; margin: 0; }
+
     .controls {
       position: absolute; z-index: 1000; top: 10px; left: 10px;
       background: rgba(255,255,255,0.95); border: 1px solid #ddd; border-radius: 8px;
       padding: 8px; display: grid; gap: 6px; font-family: system-ui, sans-serif;
       max-width: 360px;
     }
-    button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff; }
+    button {
+      cursor: pointer; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff;
+    }
     button:hover { background: #f6f6f6; }
     .status { font-size: 12px; color: #444; }
     .error { color: #b00020; }
 
-    /* --- Simple modal --- */
+    /* Modal */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.45);
       display: none; align-items: center; justify-content: center; z-index: 1500;
@@ -72,14 +75,14 @@ This map is meant for you to get a better sense of the size of Gaza and the West
   </div>
 
   <script>
-    // Map (Los Angeles)
+    // === Map (Los Angeles) ===
     const map = L.map('map').setView([34.0522, -118.2437], 11);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     const layerControl = L.control.layers({ "OpenStreetMap": osm }, {}, { collapsed:false }).addTo(map);
 
-    // RAW URLs from your repo
+    // === RAW URLs from your public repo ===
     const GAZA_URL = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/gaza.geojson';
     const WB_URL   = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/west_bank.geojson';
 
@@ -91,14 +94,15 @@ This map is meant for you to get a better sense of the size of Gaza and the West
     const STYLE_GAZA = { color:'#ef4444', weight:2, fillOpacity:0.15 };
     const STYLE_WB   = { color:'#3b82f6', weight:2, fillOpacity:0.15 };
 
-    // POI layer
+    // POI overlay
     const poiLayer = L.layerGroup();
     layerControl.addOverlay(poiLayer, "Schools & Libraries (OSM)");
 
+    // Status helper
     const statusEl = document.getElementById('status');
     const setStatus = (m,err=false)=>{ statusEl.textContent=m; statusEl.className='status'+(err?' error':''); };
 
-    // Robust fetch
+    // Fetch JSON robustly
     async function fetchJSON(url){
       const r = await fetch(url, { cache:'no-store' });
       if(!r.ok) throw new Error(`HTTP ${r.status} @ ${url}`);
@@ -108,11 +112,11 @@ This map is meant for you to get a better sense of the size of Gaza and the West
     }
     async function ensureTemplates(){
       if(!gazaTemplate){ setStatus('Loading Gaza…'); gazaTemplate = await fetchJSON(GAZA_URL); }
-      if(!wbTemplate){   setStatus('Loading West Bank…'); wbTemplate   = await fetchJSON(WB_URL); }
+      if(!wbTemplate){   setStatus('Loading West Bank…'); wbTemplate = await fetchJSON(WB_URL); }
       setStatus('Ready');
     }
 
-    // Helpers
+    // Geometry helpers
     function getCenter(fc){ const tmp=L.geoJSON(fc), c=tmp.getBounds().getCenter(); tmp.remove(); return c; }
     function translateFC(fc, dLat, dLng){
       const out=JSON.parse(JSON.stringify(fc));
@@ -126,8 +130,11 @@ This map is meant for you to get a better sense of the size of Gaza and the West
     }
     function geojsonToLayerDraggable(fc, style){
       const layer = L.geoJSON(fc, { style });
+      // Enable dragging only AFTER the layer is on the map (prevents getRenderer errors)
       layer.on('add', () => {
-        layer.eachLayer(l => { if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable(); });
+        layer.eachLayer(l => {
+          if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable();
+        });
       });
       return layer;
     }
@@ -182,38 +189,34 @@ This map is meant for you to get a better sense of the size of Gaza and the West
           }
         }
         if (n===0) return alert('No schools/libraries found in view. Zoom in and try again.');
-        poiLayer.addTo(map);
-        setStatus(`Loaded ${n} POI`);
+        poiLayer.addTo(map);                // visible immediately
+        setStatus(`Loaded ${n} POI`);       // toggle via layer control
       } catch(e){ setStatus('POI load failed: '+e.message, true); alert(e.message); }
     });
-// Modal wiring
-const modal = document.getElementById('readmeModal');
-const btnReadme = document.getElementById('btnReadme');
-const btnClose = document.getElementById('modalClose');
 
-function openModal(){ 
-  modal.classList.add('show'); 
-  modal.setAttribute('aria-hidden','false'); 
-}
-function closeModal(){ 
-  modal.classList.remove('show'); 
-  modal.setAttribute('aria-hidden','true'); 
-}
+    // Modal wiring
+    const modal = document.getElementById('readmeModal');
+    const btnReadme = document.getElementById('btnReadme');
+    const btnClose = document.getElementById('modalClose');
 
-btnReadme.addEventListener('click', openModal);
-btnClose.addEventListener('click', closeModal);
-modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
-window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
+    function openModal(){ modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); }
+    function closeModal(){ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); }
 
-// ✅ Auto-open once per visitor, but allow manual reopening via ReadMe button
-if (!localStorage.getItem('readmeShown')) {
-  openModal();
-  localStorage.setItem('readmeShown', 'true');
+    btnReadme.addEventListener('click', openModal);
+    btnClose.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
+    window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
 
+    // Auto-open once per visitor, but can be reopened via the ReadMe button
+    if (!localStorage.getItem('readmeShown')) {
+      openModal();
+      localStorage.setItem('readmeShown', 'true');
+    }
+
+    console.log('Using RAW URLs:', GAZA_URL, WB_URL);
   </script>
 </body>
 </html>
-
 
 
   
