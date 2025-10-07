@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Gaza Strip (PLACEHOLDER - NOT OFFICIAL)",
+        "note": "Replace with official polygon GeoJSON from geoBoundaries or other authoritative source."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              34.201,
+              31.22
+            ],
+            [
+              34.567,
+              31.22
+            ],
+            [
+              34.567,
+              31.59
+            ],
+            [
+              34.201,
+              31.59
+            ],
+            [
+              34.201,
+              31.22
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

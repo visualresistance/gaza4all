@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "West Bank (PLACEHOLDER - NOT OFFICIAL)",
+        "note": "Replace with official polygon GeoJSON from geoBoundaries or other authoritative source."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              34.95,
+              31.2
+            ],
+            [
+              35.6,
+              31.2
+            ],
+            [
+              35.6,
+              32.2
+            ],
+            [
+              34.95,
+              32.2
+            ],
+            [
+              34.95,
+              31.2
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

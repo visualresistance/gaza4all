@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Move Gaza & West Bank Over Any City</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.path.drag@0.0.6/src/Path.Drag.js"></script>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .top-buttons { position: absolute; z-index: 1000; top: 10px; left: 10px; display: flex; gap: 8px; }
+    .top-buttons button { background: white; border: 1px solid #ccc; padding: 6px 10px; border-radius: 4px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .legend { position: absolute; bottom: 10px; left: 10px; background: white; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font: 12px/1.3 system-ui, sans-serif; }
+    .legend div { margin: 2px 0; }
+    .swatch { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align: -2px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="top-buttons">
+    <button id="loadPOI">Load Schools & Libraries (in view)</button>
+    <button id="resetPolys">Reset Polygons</button>
+  </div>
+  <div class="legend">
+    <div><span class="swatch" style="background:#ef4444;"></span>Gaza Strip (draggable)</div>
+    <div><span class="swatch" style="background:#3b82f6;"></span>West Bank (draggable)</div>
+  </div>
+  <script>
+    const map = L.map('map', { zoomSnap: 0.5 }).setView([34.0522, -118.2437], 11); // Los Angeles
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const overlays = {};
+    const poiLayer = L.layerGroup();
+    overlays["Schools & Libraries (OSM)"] = poiLayer;
+
+    function styledPoly(geojson, options = {}) {
+      const style = Object.assign({ color: options.color || '#ef4444', weight: 2, fillOpacity: 0.15 }, options.style || {});
+      const layer = L.geoJSON(geojson, { style, onEachFeature: (f, lyr) => {
+        if (lyr.dragging) lyr.dragging.enable();
+        lyr.on('dragstart', () => lyr.setStyle({ opacity: 0.7 }));
+        lyr.on('dragend', () => lyr.setStyle({ opacity: 1.0 }));
+      }});
+      layer.eachLayer(l => { if (l.dragging) l.dragging.enable(); });
+      return layer;
+    }
+
+    let gazaLayer, westBankLayer, originalGaza, originalWB;
+    let layerControl;
+
+    async function loadLocalPolys() {
+      const gaza = await fetch('data/gaza.geojson').then(r => r.json());
+      const wb = await fetch('data/west_bank.geojson').then(r => r.json());
+      originalGaza = JSON.parse(JSON.stringify(gaza));
+      originalWB = JSON.parse(JSON.stringify(wb));
+
+      gazaLayer = styledPoly(gaza, { color: '#ef4444' }).addTo(map);
+      westBankLayer = styledPoly(wb, { color: '#3b82f6' }).addTo(map);
+
+      overlays["Gaza Strip (draggable)"] = gazaLayer;
+      overlays["West Bank (draggable)"] = westBankLayer;
+
+      layerControl = L.control.layers({ "OpenStreetMap": osm }, overlays, { collapsed: false }).addTo(map);
+    }
+
+    async function loadPOI() {
+      const b = map.getBounds();
+      const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(',');
+      const query = `
+        [out:json][timeout:25];
+        (
+          node["amenity"="school"](${bbox});
+          way["amenity"="school"](${bbox});
+          relation["amenity"="school"](${bbox});
+          node["amenity"="library"](${bbox});
+          way["amenity"="library"](${bbox});
+          relation["amenity"="library"](${bbox});
+        );
+        out center;
+      `;
+      const url = 'https://overpass-api.de/api/interpreter';
+      const data = await fetch(url, { method: 'POST', body: query, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then(r => r.json());
+
+      poiLayer.clearLayers();
+      const points = [];
+      for (const el of data.elements) {
+        let lat = el.lat, lon = el.lon;
+        if (!lat && el.center) { lat = el.center.lat; lon = el.center.lon; }
+        if (lat && lon) {
+          const name = el.tags?.name || '(unnamed)';
+          const type = el.tags?.amenity || 'amenity';
+          points.push(L.circleMarker([lat, lon], { radius: 4 }).bindPopup(`<b>${name}</b><br/>${type}`));
+        }
+      }
+      if (points.length) {
+        points.forEach(p => p.addTo(poiLayer));
+        poiLayer.addTo(map);
+      } else {
+        alert('No schools/libraries found in current view. Zoom/pan and try again.');
+      }
+    }
+
+    function resetPolygons() {
+      if (!originalGaza || !originalWB) return;
+      if (gazaLayer) map.removeLayer(gazaLayer);
+      if (westBankLayer) map.removeLayer(westBankLayer);
+      gazaLayer = styledPoly(originalGaza, { color: '#ef4444' }).addTo(map);
+      westBankLayer = styledPoly(originalWB, { color: '#3b82f6' }).addTo(map);
+      if (layerControl) {
+        layerControl.addOverlay(gazaLayer, "Gaza Strip (draggable)");
+        layerControl.addOverlay(westBankLayer, "West Bank (draggable)");
+      }
+    }
+
+    document.getElementById('loadPOI').addEventListener('click', loadPOI);
+    document.getElementById('resetPolys').addEventListener('click', resetPolygons);
+
+    loadLocalPolys().catch(e => alert('Failed to load local GeoJSON polygons. Make sure files exist in /data.\n' + e.message));
+  </script>
+</body>
+</html>
