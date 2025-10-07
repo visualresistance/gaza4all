@@ -2,70 +2,243 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Move Gaza & West Bank Over Any City</title>
+  <title>Gaza & West Bank — Move Over Any City</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Draggable polygons -->
   <script src="https://cdn.jsdelivr.net/npm/leaflet.path.drag@0.0.6/src/Path.Drag.js"></script>
+
   <style>
     html, body, #map { height: 100%; margin: 0; }
-    .top-buttons { position: absolute; z-index: 1000; top: 10px; left: 10px; display: flex; gap: 8px; }
-    .top-buttons button { background: white; border: 1px solid #ccc; padding: 6px 10px; border-radius: 4px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-    .legend { position: absolute; bottom: 10px; left: 10px; background: white; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font: 12px/1.3 system-ui, sans-serif; }
-    .legend div { margin: 2px 0; }
-    .swatch { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align: -2px; }
+    .ui {
+      position: absolute; z-index: 1000; top: 10px; left: 10px; right: 10px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .panel {
+      background: rgba(255,255,255,0.96);
+      border: 1px solid #d0d0d0; border-radius: 8px; padding: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.1);
+    }
+    .panel h4 { margin: 0 0 6px; font-size: 14px; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; }
+    button {
+      background: white; border: 1px solid #ccc; border-radius: 6px; padding: 6px 10px; cursor: pointer;
+    }
+    button:hover { background: #f6f6f6; }
+    .active-toggle label {
+      display: inline-flex; align-items: center; gap: 6px; margin-right: 10px; padding: 2px 6px; border-radius: 4px;
+    }
+    .active-toggle input { accent-color: #111; }
+    .active-gaza { background: #fee2e2; }       /* red-100 */
+    .active-wb   { background: #dbeafe; }       /* blue-100 */
+    .legend {
+      position: absolute; bottom: 10px; left: 10px; z-index: 1000;
+      background: rgba(255,255,255,0.96); border: 1px solid #d0d0d0; border-radius: 8px; padding: 8px 10px;
+      font-size: 12px;
+    }
+    .swatch { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:-2px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="top-buttons">
-    <button id="loadPOI">Load Schools & Libraries (in view)</button>
-    <button id="resetPolys">Reset Polygons</button>
+
+  <!-- Controls -->
+  <div class="ui">
+    <div class="panel">
+      <h4>Polygons</h4>
+      <div class="row">
+        <button id="placeGaza">Place Gaza here</button>
+        <button id="placeWB">Place West Bank here</button>
+        <button id="reset">Reset to original geography</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div class="row active-toggle" style="margin-top:6px;">
+        <label id="lblGaza"><input type="radio" name="active" value="gaza"> Active: Gaza</label>
+        <label id="lblWB"><input type="radio" name="active" value="wb"> Active: West Bank</label>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#444;">
+        Tip: Click a polygon to select it; then drag it anywhere. “Place here” drops a fresh copy at the map center.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h4>Points of Interest</h4>
+      <div class="row">
+        <button id="loadPOI">Load Schools & Libraries (OSM) in view</button>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#444;">
+        Zoom/pan to the area you care about first. Overpass can throttle; for heavy use, cache results to static GeoJSON.
+      </div>
+    </div>
   </div>
+
+  <!-- Legend -->
   <div class="legend">
-    <div><span class="swatch" style="background:#ef4444;"></span>Gaza Strip (draggable)</div>
+    <div><span class="swatch" style="background:#ef4444;"></span>Gaza (draggable)</div>
     <div><span class="swatch" style="background:#3b82f6;"></span>West Bank (draggable)</div>
   </div>
+
   <script>
-    const map = L.map('map', { zoomSnap: 0.5 }).setView([34.0522, -118.2437], 11); // Los Angeles
+    // --- Map (start in Los Angeles) ---
+    const map = L.map('map', { zoomSnap: 0.5 }).setView([34.0522, -118.2437], 11);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
+    // --- Layers & state ---
     const overlays = {};
     const poiLayer = L.layerGroup();
     overlays["Schools & Libraries (OSM)"] = poiLayer;
 
-    function styledPoly(geojson, options = {}) {
-      const style = Object.assign({ color: options.color || '#ef4444', weight: 2, fillOpacity: 0.15 }, options.style || {});
-      const layer = L.geoJSON(geojson, { style, onEachFeature: (f, lyr) => {
-        if (lyr.dragging) lyr.dragging.enable();
-        lyr.on('dragstart', () => lyr.setStyle({ opacity: 0.7 }));
-        lyr.on('dragend', () => lyr.setStyle({ opacity: 1.0 }));
-      }});
+    let gazaTemplate = null;      // Original geometry from data/gaza.geojson
+    let wbTemplate = null;        // Original geometry from data/west_bank.geojson
+    let gazaLayer = null;         // Current draggable instance on map (if any)
+    let wbLayer = null;           // Current draggable instance on map (if any)
+    let layerControl = L.control.layers({ "OpenStreetMap": osm }, overlays, { collapsed: false }).addTo(map);
+
+    // --- Styles ---
+    const BASE_STYLE_GAZA = { color: '#ef4444', weight: 2, fillOpacity: 0.15 };
+    const BASE_STYLE_WB   = { color: '#3b82f6', weight: 2, fillOpacity: 0.15 };
+    const ACTIVE_BUMP     = { weight: 4, fillOpacity: 0.30 };
+
+    let activeKey = null; // 'gaza' | 'wb' | null
+
+    function applyActiveStyles() {
+      if (gazaLayer) gazaLayer.setStyle(activeKey === 'gaza' ? {...BASE_STYLE_GAZA, ...ACTIVE_BUMP} : BASE_STYLE_GAZA);
+      if (wbLayer)   wbLayer.setStyle(activeKey === 'wb'   ? {...BASE_STYLE_WB,   ...ACTIVE_BUMP} : BASE_STYLE_WB);
+      // Toggle radio label highlights
+      document.getElementById('lblGaza').classList.toggle('active-gaza', activeKey === 'gaza');
+      document.getElementById('lblWB').classList.toggle('active-wb', activeKey === 'wb');
+    }
+
+    function setActive(which) {
+      activeKey = which; // 'gaza' or 'wb'
+      const radios = document.querySelectorAll('input[name="active"]');
+      radios.forEach(r => r.checked = (r.value === which));
+      if (which === 'gaza' && gazaLayer) gazaLayer.bringToFront();
+      if (which === 'wb'   && wbLayer)   wbLayer.bringToFront();
+      applyActiveStyles();
+    }
+
+    // --- Utilities ---
+    function layerFromFC(fc, color) {
+      const layer = L.geoJSON(fc, {
+        style: { color, weight: 2, fillOpacity: 0.15 },
+        onEachFeature: (f, lyr) => {
+          if (lyr.dragging) lyr.dragging.enable();
+          lyr.on('click', () => {
+            if (lyr === gazaLayer || (gazaLayer && lyr._leaflet_id === gazaLayer._leaflet_id)) setActive('gaza');
+            else if (lyr === wbLayer || (wbLayer && lyr._leaflet_id === wbLayer._leaflet_id)) setActive('wb');
+          });
+          lyr.on('dragstart', () => {
+            if (color === '#ef4444') setActive('gaza'); else setActive('wb');
+            lyr.setStyle({ opacity: 0.8 });
+          });
+          lyr.on('dragend', () => lyr.setStyle({ opacity: 1.0 }));
+        }
+      });
+      // Enable drag for any child paths
       layer.eachLayer(l => { if (l.dragging) l.dragging.enable(); });
       return layer;
     }
 
-    let gazaLayer, westBankLayer, originalGaza, originalWB;
-    let layerControl;
+    function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
-    async function loadLocalPolys() {
-      const gaza = await fetch('data/gaza.geojson').then(r => r.json());
-      const wb = await fetch('data/west_bank.geojson').then(r => r.json());
-      originalGaza = JSON.parse(JSON.stringify(gaza));
-      originalWB = JSON.parse(JSON.stringify(wb));
-
-      gazaLayer = styledPoly(gaza, { color: '#ef4444' }).addTo(map);
-      westBankLayer = styledPoly(wb, { color: '#3b82f6' }).addTo(map);
-
-      overlays["Gaza Strip (draggable)"] = gazaLayer;
-      overlays["West Bank (draggable)"] = westBankLayer;
-
-      layerControl = L.control.layers({ "OpenStreetMap": osm }, overlays, { collapsed: false }).addTo(map);
+    function getCenterOfFC(fc) {
+      // Use Leaflet to compute bounds center
+      const tmp = L.geoJSON(fc);
+      const c = tmp.getBounds().getCenter();
+      tmp.remove();
+      return c; // L.LatLng
     }
 
+    function translateFC(fc, dLat, dLng) {
+      const out = clone(fc);
+      function walkCoords(coords) {
+        // polygon: [ [ [lng,lat], ... ] ]
+        // multipolygon: [ [ [ [lng,lat], ... ] ] ]
+        if (typeof coords[0][0] === 'number') {
+          // Linear ring
+          return coords.map(([lng, lat]) => [lng + dLng, lat + dLat]);
+        } else {
+          return coords.map(walkCoords);
+        }
+      }
+      out.features = out.features.map(feat => {
+        const g = feat.geometry;
+        if (g.type === 'Polygon') {
+          g.coordinates = walkCoords(g.coordinates);
+        } else if (g.type === 'MultiPolygon') {
+          g.coordinates = walkCoords(g.coordinates);
+        } else {
+          // if somehow not polygonal, leave as-is
+        }
+        return feat;
+      });
+      return out;
+    }
+
+    function placeTemplateAtCenter(templateFC, color) {
+      const mapCenter = map.getCenter();
+      const tCenter = getCenterOfFC(templateFC);
+      const dLat = mapCenter.lat - tCenter.lat;
+      const dLng = mapCenter.lng - tCenter.lng;
+      const translated = translateFC(templateFC, dLat, dLng);
+      return layerFromFC(translated, color);
+    }
+
+    // --- Loading local templates ---
+    async function loadTemplates() {
+      try {
+        const gaza = await fetch('data/gaza.geojson').then(r => r.json());
+        const wb   = await fetch('data/west_bank.geojson').then(r => r.json());
+        gazaTemplate = gaza; wbTemplate = wb;
+      } catch (e) {
+        alert("Failed to load local GeoJSON.\nEnsure 'data/gaza.geojson' and 'data/west_bank.geojson' exist.\n" + e.message);
+      }
+    }
+
+    // --- Actions ---
+    function clearPolys() {
+      if (gazaLayer) { map.removeLayer(gazaLayer); gazaLayer = null; }
+      if (wbLayer)   { map.removeLayer(wbLayer);   wbLayer = null; }
+      activeKey = null; applyActiveStyles();
+    }
+
+    async function resetToOriginalGeography() {
+      clearPolys();
+      // Add templates at their true locations (no translation)
+      if (gazaTemplate) {
+        gazaLayer = layerFromFC(gazaTemplate, '#ef4444').addTo(map);
+        layerControl.addOverlay(gazaLayer, "Gaza (draggable)");
+      }
+      if (wbTemplate) {
+        wbLayer = layerFromFC(wbTemplate, '#3b82f6').addTo(map);
+        layerControl.addOverlay(wbLayer, "West Bank (draggable)");
+      }
+      setActive('gaza');
+    }
+
+    async function placeGazaHere() {
+      if (!gazaTemplate) return alert('Gaza template not loaded.');
+      if (gazaLayer) { map.removeLayer(gazaLayer); }
+      gazaLayer = placeTemplateAtCenter(gazaTemplate, '#ef4444').addTo(map);
+      layerControl.addOverlay(gazaLayer, "Gaza (draggable)");
+      setActive('gaza');
+    }
+
+    async function placeWBHere() {
+      if (!wbTemplate) return alert('West Bank template not loaded.');
+      if (wbLayer) { map.removeLayer(wbLayer); }
+      wbLayer = placeTemplateAtCenter(wbTemplate, '#3b82f6').addTo(map);
+      layerControl.addOverlay(wbLayer, "West Bank (draggable)");
+      setActive('wb');
+    }
+
+    // Overpass loader for Schools & Libraries
     async function loadPOI() {
       const b = map.getBounds();
       const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(',');
@@ -81,44 +254,54 @@
         );
         out center;
       `;
-      const url = 'https://overpass-api.de/api/interpreter';
-      const data = await fetch(url, { method: 'POST', body: query, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then(r => r.json());
+      try {
+        const data = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: query,
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
+        }).then(r => r.json());
 
-      poiLayer.clearLayers();
-      const points = [];
-      for (const el of data.elements) {
-        let lat = el.lat, lon = el.lon;
-        if (!lat && el.center) { lat = el.center.lat; lon = el.center.lon; }
-        if (lat && lon) {
-          const name = el.tags?.name || '(unnamed)';
-          const type = el.tags?.amenity || 'amenity';
-          points.push(L.circleMarker([lat, lon], { radius: 4 }).bindPopup(`<b>${name}</b><br/>${type}`));
+        poiLayer.clearLayers();
+        const points = [];
+        for (const el of data.elements) {
+          let lat = el.lat, lon = el.lon;
+          if (!lat && el.center) { lat = el.center.lat; lon = el.center.lon; }
+          if (lat && lon) {
+            const name = el.tags?.name || '(unnamed)';
+            const type = el.tags?.amenity || 'amenity';
+            points.push(L.circleMarker([lat, lon], { radius: 4 }).bindPopup(`<b>${name}</b><br/>${type}`));
+          }
         }
-      }
-      if (points.length) {
-        points.forEach(p => p.addTo(poiLayer));
-        poiLayer.addTo(map);
-      } else {
-        alert('No schools/libraries found in current view. Zoom/pan and try again.');
-      }
-    }
-
-    function resetPolygons() {
-      if (!originalGaza || !originalWB) return;
-      if (gazaLayer) map.removeLayer(gazaLayer);
-      if (westBankLayer) map.removeLayer(westBankLayer);
-      gazaLayer = styledPoly(originalGaza, { color: '#ef4444' }).addTo(map);
-      westBankLayer = styledPoly(originalWB, { color: '#3b82f6' }).addTo(map);
-      if (layerControl) {
-        layerControl.addOverlay(gazaLayer, "Gaza Strip (draggable)");
-        layerControl.addOverlay(westBankLayer, "West Bank (draggable)");
+        if (points.length) {
+          points.forEach(p => p.addTo(poiLayer));
+          poiLayer.addTo(map);
+        } else {
+          alert('No schools/libraries found in current view. Try zooming in further.');
+        }
+      } catch (e) {
+        alert('Overpass query failed. Try again in a minute or zoom to a smaller area.\n' + e.message);
       }
     }
 
+    // --- Wire up UI ---
+    document.getElementById('placeGaza').addEventListener('click', placeGazaHere);
+    document.getElementById('placeWB').addEventListener('click', placeWBHere);
+    document.getElementById('reset').addEventListener('click', resetToOriginalGeography);
+    document.getElementById('clear').addEventListener('click', clearPolys);
     document.getElementById('loadPOI').addEventListener('click', loadPOI);
-    document.getElementById('resetPolys').addEventListener('click', resetPolygons);
 
-    loadLocalPolys().catch(e => alert('Failed to load local GeoJSON polygons. Make sure files exist in /data.\n' + e.message));
+    document.querySelectorAll('input[name="active"]').forEach(r => {
+      r.addEventListener('change', (e) => setActive(e.target.value));
+    });
+
+    // --- Init ---
+    (async () => {
+      await loadTemplates();
+      // Start with nothing on the map so you can place them where you like,
+      // but you can uncomment the next line to drop them in LA immediately:
+      // await placeGazaHere(); await placeWBHere();
+      applyActiveStyles();
+    })();
   </script>
 </body>
 </html>
