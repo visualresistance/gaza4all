@@ -2,15 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>gaza4all — size compare</title>
+  <title>gaza4all — size compare (accurate move + area)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Draggable polygons plugin -->
+  <!-- Draggable polygons -->
   <script src="https://cdn.jsdelivr.net/npm/leaflet.path.drag@0.0.6/src/Path.Drag.js"></script>
+
+  <!-- Turf.js for geodesic area -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
   <style>
     html, body, #map { height: 100%; margin: 0; }
@@ -27,6 +30,16 @@
     button:hover { background: #f6f6f6; }
     .status { font-size: 12px; color: #444; }
     .error { color: #b00020; }
+
+    /* Area info pill */
+    .info-pill {
+      position: absolute; z-index: 1000; top: 10px; right: 10px;
+      background: rgba(255,255,255,0.96); border: 1px solid #ddd; border-radius: 8px;
+      padding: 8px 10px; font-family: system-ui, sans-serif; font-size: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08); min-width: 180px;
+    }
+    .info-pill .name { font-weight: 600; }
+    .info-pill .num { font-variant-numeric: tabular-nums; }
 
     /* Modal */
     .modal-overlay {
@@ -59,6 +72,12 @@
     <button id="btnWB">Add West Bank here</button>
     <button id="btnPOI">Load Schools & Libraries (in view)</button>
     <div class="status" id="status">Ready</div>
+  </div>
+
+  <!-- Area info -->
+  <div class="info-pill" id="infoPill" style="display:none;">
+    <div><span class="name" id="pillName">—</span></div>
+    <div>Geodesic area: <span class="num" id="pillArea">—</span> km²</div>
   </div>
 
   <!-- Modal -->
@@ -102,6 +121,24 @@ This map is meant for you to get a better sense of the size of Gaza and the West
     const statusEl = document.getElementById('status');
     const setStatus = (m,err=false)=>{ statusEl.textContent=m; statusEl.className='status'+(err?' error':''); };
 
+    // Area pill helpers
+    const pill = document.getElementById('infoPill');
+    const pillName = document.getElementById('pillName');
+    const pillArea = document.getElementById('pillArea');
+    function showAreaPill(name, fc){
+      try {
+        const area_m2 = turf.area(fc);                 // geodesic area on WGS84
+        const area_km2 = area_m2 / 1e6;
+        pillName.textContent = name;
+        pillArea.textContent = area_km2.toFixed(1);
+        pill.style.display = 'block';
+      } catch(e){
+        pillName.textContent = name;
+        pillArea.textContent = '—';
+        pill.style.display = 'block';
+      }
+    }
+
     // Fetch JSON robustly
     async function fetchJSON(url){
       const r = await fetch(url, { cache:'no-store' });
@@ -116,42 +153,80 @@ This map is meant for you to get a better sense of the size of Gaza and the West
       setStatus('Ready');
     }
 
-    // Geometry helpers
-    function getCenter(fc){ const tmp=L.geoJSON(fc), c=tmp.getBounds().getCenter(); tmp.remove(); return c; }
-    function translateFC(fc, dLat, dLng){
-      const out=JSON.parse(JSON.stringify(fc));
-      function shift(coords){ return (typeof coords[0][0]==='number') ? coords.map(([lng,lat])=>[lng+dLng,lat+dLat]) : coords.map(shift); }
+    // === Geometry helpers ===
+    // Get geodesic center (via bounds)
+    function getCenterLatLng(fc){
+      const tmp=L.geoJSON(fc); const c=tmp.getBounds().getCenter(); tmp.remove(); return c;
+    }
+
+    // Translate a FeatureCollection by a delta in EPSG:3857 meters
+    function translateFC_3857(fc, dx_m, dy_m){
+      const crs = map.options.crs; // EPSG:3857
+      const out = JSON.parse(JSON.stringify(fc));
+
+      function shiftCoord(coord){ // [lng,lat] => shift in meters then back
+        const latlng = L.latLng(coord[1], coord[0]);
+        const p = crs.project(latlng);      // {x,y} in meters
+        const p2 = L.point(p.x + dx_m, p.y + dy_m);
+        const ll2 = crs.unproject(p2);      // back to lat/lng
+        return [ll2.lng, ll2.lat];
+      }
+      function shiftRings(coords){
+        if (typeof coords[0][0] === 'number') {
+          return coords.map(shiftCoord);            // LinearRing
+        } else {
+          return coords.map(shiftRings);           // array of rings / polygons
+        }
+      }
+
       out.features = out.features.map(feat=>{
-        const g=feat.geometry;
-        if(g.type==='Polygon'||g.type==='MultiPolygon') g.coordinates=shift(g.coordinates);
+        const g = feat.geometry;
+        if (g.type === 'Polygon' || g.type === 'MultiPolygon') {
+          g.coordinates = shiftRings(g.coordinates);
+        } else if (g.type === 'MultiLineString' || g.type === 'LineString') {
+          g.coordinates = Array.isArray(g.coordinates[0][0])
+            ? g.coordinates.map(r => r.map(shiftCoord))
+            : g.coordinates.map(shiftCoord);
+        }
         return feat;
       });
+
       return out;
     }
+
+    // Create a draggable Leaflet layer (enable dragging AFTER add)
     function geojsonToLayerDraggable(fc, style){
       const layer = L.geoJSON(fc, { style });
-      // Enable dragging only AFTER the layer is on the map (prevents getRenderer errors)
       layer.on('add', () => {
-        layer.eachLayer(l => {
-          if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable();
-        });
+        layer.eachLayer(l => { if (l.dragging && typeof l.dragging.enable === 'function') l.dragging.enable(); });
       });
       return layer;
     }
-    function placeAtCenter(templateFC, style){
-      const mC=map.getCenter(), tC=getCenter(templateFC);
-      const moved = translateFC(templateFC, mC.lat - tC.lat, mC.lng - tC.lng);
+
+    // Place template at current map center using 3857-meter translation
+    function placeAtCenter_3857(templateFC, style){
+      const mapC = map.getCenter();
+      const tplC = getCenterLatLng(templateFC);
+
+      const crs = map.options.crs;
+      const mapP = crs.project(mapC);
+      const tplP = crs.project(tplC);
+      const dx = mapP.x - tplP.x; // meters in 3857
+      const dy = mapP.y - tplP.y;
+
+      const moved = translateFC_3857(templateFC, dx, dy);
       return geojsonToLayerDraggable(moved, style).addTo(map);
     }
 
-    // Buttons
+    // === Buttons ===
     document.getElementById('btnGaza').addEventListener('click', async ()=>{
       try {
         await ensureTemplates();
         if (gazaLayer) map.removeLayer(gazaLayer);
-        gazaLayer = placeAtCenter(gazaTemplate, STYLE_GAZA);
+        gazaLayer = placeAtCenter_3857(gazaTemplate, STYLE_GAZA);
         layerControl.addOverlay(gazaLayer, 'Gaza (draggable)');
         setStatus('Gaza placed');
+        showAreaPill('Gaza', gazaTemplate);   // show true geodesic area from the source geometry
       } catch(e){ setStatus('Failed to load Gaza: '+e.message, true); alert(e.message); }
     });
 
@@ -159,9 +234,10 @@ This map is meant for you to get a better sense of the size of Gaza and the West
       try {
         await ensureTemplates();
         if (wbLayer) map.removeLayer(wbLayer);
-        wbLayer = placeAtCenter(wbTemplate, STYLE_WB);
+        wbLayer = placeAtCenter_3857(wbTemplate, STYLE_WB);
         layerControl.addOverlay(wbLayer, 'West Bank (draggable)');
         setStatus('West Bank placed');
+        showAreaPill('West Bank', wbTemplate);
       } catch(e){ setStatus('Failed to load West Bank: '+e.message, true); alert(e.message); }
     });
 
@@ -189,12 +265,12 @@ This map is meant for you to get a better sense of the size of Gaza and the West
           }
         }
         if (n===0) return alert('No schools/libraries found in view. Zoom in and try again.');
-        poiLayer.addTo(map);                // visible immediately
-        setStatus(`Loaded ${n} POI`);       // toggle via layer control
+        poiLayer.addTo(map);
+        setStatus(`Loaded ${n} POI`);
       } catch(e){ setStatus('POI load failed: '+e.message, true); alert(e.message); }
     });
 
-    // Modal wiring
+    // === Modal wiring ===
     const modal = document.getElementById('readmeModal');
     const btnReadme = document.getElementById('btnReadme');
     const btnClose = document.getElementById('modalClose');
@@ -217,6 +293,7 @@ This map is meant for you to get a better sense of the size of Gaza and the West
   </script>
 </body>
 </html>
+
 
 
   
