@@ -1,0 +1,1 @@
+This map is meant for you to get a better sense of the size of Gaza and the West Bank. The ongoing destruction of Gaza and the genocide and displacement of Palestinians is unimaginable. Try for a moment to see yourself in Gaza.
