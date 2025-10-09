@@ -29,6 +29,10 @@
     }
     html, body, #map { height: 100%; margin: 0; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+   
+    /* Sidebar toggle */
+    body.sidebar-hidden .sidebar { display: none; }
+    body.sidebar-hidden .info-pill { right: 10px; } /* move pill to the edge when hidden */
 
     /* Controls */
     .controls {
@@ -101,6 +105,8 @@
       <button id="btnReadme">ReadMe</button>
       <button id="btnGaza">Add Gaza here</button>
       <button id="btnWB">Add West Bank here</button>
+      <button id="toggleSidebar" title="Show/Hide sidebar">Full Map</button>
+
     </div>
     <div class="row">
       <button id="btnPOI">Load Schools & Libraries (in view)</button>
@@ -110,6 +116,7 @@
     </div>
     <div class="status" id="status">Ready</div>
   </div>
+  
 
   <!-- Area info -->
   <div class="info-pill" id="infoPill" style="display:none;">
