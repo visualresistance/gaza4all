@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>gaza4all — size compare (accurate move + area)</title>
+  <title>gaza4all — compare & learn</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
   <!-- Leaflet -->
@@ -15,62 +15,99 @@
   <!-- Turf.js for geodesic area -->
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
-  <style>
-    html, body, #map { height: 100%; margin: 0; }
+  <!-- Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+  <!-- Config (paths, presets, start view) -->
+  <script src="config.js"></script>
+
+  <style>
+    :root {
+      --panel-w: 340px;
+      --border: #e5e7eb;
+      --shadow: 0 2px 10px rgba(0,0,0,.08);
+    }
+    html, body, #map { height: 100%; margin: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+
+    /* Controls */
     .controls {
       position: absolute; z-index: 1000; top: 10px; left: 10px;
-      background: rgba(255,255,255,0.95); border: 1px solid #ddd; border-radius: 8px;
-      padding: 8px; display: grid; gap: 6px; font-family: system-ui, sans-serif;
-      max-width: 360px;
+      background: rgba(255,255,255,0.95); border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px; display: grid; gap: 6px; max-width: 400px; box-shadow: var(--shadow);
     }
-    button {
-      cursor: pointer; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff;
+    .row { display: flex; gap: 6px; flex-wrap: wrap; }
+    button, select {
+      cursor: pointer; padding: 6px 10px; border-radius: 8px; border: 1px solid #ccc; background: #fff;
+      font-size: 14px;
     }
     button:hover { background: #f6f6f6; }
     .status { font-size: 12px; color: #444; }
-    .error { color: #b00020; }
 
-    /* Area info pill */
+    /* Area pill */
     .info-pill {
-      position: absolute; z-index: 1000; top: 10px; right: 10px;
-      background: rgba(255,255,255,0.96); border: 1px solid #ddd; border-radius: 8px;
-      padding: 8px 10px; font-family: system-ui, sans-serif; font-size: 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08); min-width: 180px;
+      position: absolute; z-index: 1000; top: 10px; right: calc(var(--panel-w) + 20px);
+      background: rgba(255,255,255,0.96); border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 10px; font-size: 12px; box-shadow: var(--shadow); min-width: 180px;
     }
     .info-pill .name { font-weight: 600; }
     .info-pill .num { font-variant-numeric: tabular-nums; }
 
+    /* Sidebar */
+    .sidebar {
+      position: absolute; z-index: 1000; top: 0; right: 0; height: 100%; width: var(--panel-w);
+      background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column;
+      box-shadow: -6px 0 20px rgba(0,0,0,.06);
+    }
+    .sidebar-header {
+      display: flex; align-items: center; justify-content: space-between; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); background: #fafafa;
+    }
+    .sidebar-title { font-size: 14px; font-weight: 600; margin: 0; }
+    .tabs { display: flex; gap: 6px; }
+    .tab-btn {
+      border: 1px solid #d1d5db; background: #fff; padding: 6px 10px; border-radius: 16px; font-size: 12px; cursor: pointer;
+    }
+    .tab-btn.active { background: #111; color: #fff; border-color: #111; }
+    .sidebar-body { padding: 12px; overflow: auto; }
+    .sidebar-body h1, .sidebar-body h2, .sidebar-body h3, .sidebar-body h4 { margin: 10px 0 6px; }
+    .sidebar-body p, .sidebar-body li { font-size: 13px; line-height: 1.45; }
+    .sidebar-body a { color: #111; }
+
     /* Modal */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: none; align-items: center; justify-content: center; z-index: 1500;
-      padding: 16px;
+      display: none; align-items: center; justify-content: center; z-index: 1500; padding: 16px;
     }
     .modal-overlay.show { display: flex; }
     .modal-card {
-      background: #ffffff; border-radius: 12px; border: 1px solid #e5e7eb;
-      max-width: 560px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+      background: #ffffff; border-radius: 12px; border: 1px solid var(--border);
+      max-width: 600px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
       padding: 18px 16px 14px;
     }
-    .modal-header {
-      display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .modal-title { font-size: 16px; font-weight: 600; margin: 0; }
-    .modal-close {
-      background: transparent; border: none; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px;
-    }
-    .modal-body { font-size: 14px; color: #222; line-height: 1.45; white-space: pre-wrap; }
+    .modal-close { background: transparent; border: none; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px; }
+    .modal-body { font-size: 14px; color: #222; line-height: 1.45; }
+    .modal-body :is(h1,h2,h3,h4,p,ul,ol){ margin: 0 0 10px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
+  <!-- Controls -->
   <div class="controls">
-    <button id="btnReadme">ReadMe</button>
-    <button id="btnGaza">Add Gaza here</button>
-    <button id="btnWB">Add West Bank here</button>
-    <button id="btnPOI">Load Schools & Libraries (in view)</button>
+    <div class="row">
+      <button id="btnReadme">ReadMe</button>
+      <button id="btnGaza">Add Gaza here</button>
+      <button id="btnWB">Add West Bank here</button>
+    </div>
+    <div class="row">
+      <button id="btnPOI">Load Schools & Libraries (in view)</button>
+      <select id="presetSelect" title="Jump to a city preset">
+        <option value="">— Jump to a city —</option>
+      </select>
+    </div>
     <div class="status" id="status">Ready</div>
   </div>
 
@@ -80,6 +117,21 @@
     <div>Geodesic area: <span class="num" id="pillArea">—</span> km²</div>
   </div>
 
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h3 class="sidebar-title">About & resources</h3>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="about">About</button>
+        <button class="tab-btn" data-tab="data">Data</button>
+        <button class="tab-btn" data-tab="resources">Resources</button>
+      </div>
+    </div>
+    <div class="sidebar-body" id="sidebarBody">
+      <!-- Markdown injected here -->
+    </div>
+  </aside>
+
   <!-- Modal -->
   <div class="modal-overlay" id="readmeModal" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="modal-card" role="document">
@@ -87,29 +139,41 @@
         <h3 class="modal-title">About this map</h3>
         <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
       </div>
-      <div class="modal-body">
-This map is meant for you to get a better sense of the size of Gaza and the West Bank. The ongoing destruction of Gaza and the genocide and displacement of Palestinians is unimaginable. Try for a moment to see yourself in Gaza
-      </div>
+      <div class="modal-body" id="modalBody"><!-- Markdown injected --></div>
     </div>
   </div>
 
   <script>
-    // === Map (Los Angeles) ===
-    const map = L.map('map').setView([34.0522, -118.2437], 11);
+    // === CONFIG ===
+    const CFG = window.GAZA4ALL_CONFIG || {};
+    const START_CENTER = (CFG.start && Array.isArray(CFG.start.center)) ? CFG.start.center : [34.0522, -118.2437];
+    const START_ZOOM   = (CFG.start && CFG.start.zoom) ? CFG.start.zoom : 11;
+
+    // Markdown paths (relative to site root)
+    const MD = CFG.md || {
+      about:     'content/about.md',
+      data:      'content/data.md',
+      resources: 'content/resources.md',
+      readme:    'content/readme.md'
+    };
+
+    // Repo (for GeoJSON) — can be this repo or others
+    const OWNER  = (CFG.repo && CFG.repo.owner)  || 'visualresistance';
+    const REPO   = (CFG.repo && CFG.repo.name)   || 'gaza4all';
+    const BRANCH = (CFG.repo && CFG.repo.branch) || 'main';
+    const GAZA_URL = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/gaza.geojson`;
+    const WB_URL   = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/west_bank.geojson`;
+
+    // === Map ===
+    const map = L.map('map').setView(START_CENTER, START_ZOOM);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     const layerControl = L.control.layers({ "OpenStreetMap": osm }, {}, { collapsed:false }).addTo(map);
 
-    // === RAW URLs from your public repo ===
-    const GAZA_URL = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/gaza.geojson';
-    const WB_URL   = 'https://raw.githubusercontent.com/visualresistance/gaza4all/main/data/west_bank.geojson';
-
     // Templates + active layers
     let gazaTemplate=null, wbTemplate=null;
     let gazaLayer=null, wbLayer=null;
-
-    // Styles
     const STYLE_GAZA = { color:'#ef4444', weight:2, fillOpacity:0.15 };
     const STYLE_WB   = { color:'#3b82f6', weight:2, fillOpacity:0.15 };
 
@@ -117,35 +181,36 @@ This map is meant for you to get a better sense of the size of Gaza and the West
     const poiLayer = L.layerGroup();
     layerControl.addOverlay(poiLayer, "Schools & Libraries (OSM)");
 
-    // Status helper
+    // Status
     const statusEl = document.getElementById('status');
-    const setStatus = (m,err=false)=>{ statusEl.textContent=m; statusEl.className='status'+(err?' error':''); };
+    const setStatus = (m,err=false)=>{ statusEl.textContent=m; statusEl.style.color = err ? '#b00020' : '#444'; };
 
-    // Area pill helpers
+    // Area pill
     const pill = document.getElementById('infoPill');
     const pillName = document.getElementById('pillName');
     const pillArea = document.getElementById('pillArea');
     function showAreaPill(name, fc){
       try {
-        const area_m2 = turf.area(fc);                 // geodesic area on WGS84
-        const area_km2 = area_m2 / 1e6;
+        const area_km2 = turf.area(fc) / 1e6;
         pillName.textContent = name;
         pillArea.textContent = area_km2.toFixed(1);
         pill.style.display = 'block';
       } catch(e){
-        pillName.textContent = name;
-        pillArea.textContent = '—';
-        pill.style.display = 'block';
+        pillName.textContent = name; pillArea.textContent = '—'; pill.style.display = 'block';
       }
     }
 
-    // Fetch JSON robustly
+    // Fetch JSON + Markdown
     async function fetchJSON(url){
       const r = await fetch(url, { cache:'no-store' });
       if(!r.ok) throw new Error(`HTTP ${r.status} @ ${url}`);
       const t = await r.text();
-      try { return JSON.parse(t); }
-      catch { throw new Error(`Non-JSON from ${url}. First 120 chars: ${t.slice(0,120)}`); }
+      try { return JSON.parse(t); } catch { throw new Error(`Non-JSON @ ${url}: ${t.slice(0,120)}`); }
+    }
+    async function fetchMD(path){
+      const r = await fetch(path, { cache:'no-store' });
+      if(!r.ok) throw new Error(`HTTP ${r.status} @ ${path}`);
+      return r.text();
     }
     async function ensureTemplates(){
       if(!gazaTemplate){ setStatus('Loading Gaza…'); gazaTemplate = await fetchJSON(GAZA_URL); }
@@ -153,48 +218,29 @@ This map is meant for you to get a better sense of the size of Gaza and the West
       setStatus('Ready');
     }
 
-    // === Geometry helpers ===
-    // Get geodesic center (via bounds)
+    // EPSG:3857 translation
     function getCenterLatLng(fc){
       const tmp=L.geoJSON(fc); const c=tmp.getBounds().getCenter(); tmp.remove(); return c;
     }
-
-    // Translate a FeatureCollection by a delta in EPSG:3857 meters
     function translateFC_3857(fc, dx_m, dy_m){
       const crs = map.options.crs; // EPSG:3857
       const out = JSON.parse(JSON.stringify(fc));
-
-      function shiftCoord(coord){ // [lng,lat] => shift in meters then back
-        const latlng = L.latLng(coord[1], coord[0]);
-        const p = crs.project(latlng);      // {x,y} in meters
-        const p2 = L.point(p.x + dx_m, p.y + dy_m);
-        const ll2 = crs.unproject(p2);      // back to lat/lng
-        return [ll2.lng, ll2.lat];
+      function shiftCoord([lng,lat]){
+        const p = crs.project(L.latLng(lat, lng));
+        const ll = crs.unproject(L.point(p.x + dx_m, p.y + dy_m));
+        return [ll.lng, ll.lat];
       }
       function shiftRings(coords){
-        if (typeof coords[0][0] === 'number') {
-          return coords.map(shiftCoord);            // LinearRing
-        } else {
-          return coords.map(shiftRings);           // array of rings / polygons
-        }
+        if (typeof coords[0][0] === 'number') return coords.map(shiftCoord);
+        return coords.map(shiftRings);
       }
-
       out.features = out.features.map(feat=>{
         const g = feat.geometry;
-        if (g.type === 'Polygon' || g.type === 'MultiPolygon') {
-          g.coordinates = shiftRings(g.coordinates);
-        } else if (g.type === 'MultiLineString' || g.type === 'LineString') {
-          g.coordinates = Array.isArray(g.coordinates[0][0])
-            ? g.coordinates.map(r => r.map(shiftCoord))
-            : g.coordinates.map(shiftCoord);
-        }
+        if (g.type === 'Polygon' || g.type === 'MultiPolygon') g.coordinates = shiftRings(g.coordinates);
         return feat;
       });
-
       return out;
     }
-
-    // Create a draggable Leaflet layer (enable dragging AFTER add)
     function geojsonToLayerDraggable(fc, style){
       const layer = L.geoJSON(fc, { style });
       layer.on('add', () => {
@@ -202,23 +248,17 @@ This map is meant for you to get a better sense of the size of Gaza and the West
       });
       return layer;
     }
-
-    // Place template at current map center using 3857-meter translation
     function placeAtCenter_3857(templateFC, style){
       const mapC = map.getCenter();
       const tplC = getCenterLatLng(templateFC);
-
       const crs = map.options.crs;
       const mapP = crs.project(mapC);
       const tplP = crs.project(tplC);
-      const dx = mapP.x - tplP.x; // meters in 3857
-      const dy = mapP.y - tplP.y;
-
-      const moved = translateFC_3857(templateFC, dx, dy);
+      const moved = translateFC_3857(templateFC, mapP.x - tplP.x, mapP.y - tplP.y);
       return geojsonToLayerDraggable(moved, style).addTo(map);
     }
 
-    // === Buttons ===
+    // Buttons: Gaza / WB
     document.getElementById('btnGaza').addEventListener('click', async ()=>{
       try {
         await ensureTemplates();
@@ -226,10 +266,9 @@ This map is meant for you to get a better sense of the size of Gaza and the West
         gazaLayer = placeAtCenter_3857(gazaTemplate, STYLE_GAZA);
         layerControl.addOverlay(gazaLayer, 'Gaza (draggable)');
         setStatus('Gaza placed');
-        showAreaPill('Gaza', gazaTemplate);   // show true geodesic area from the source geometry
+        showAreaPill('Gaza', gazaTemplate);
       } catch(e){ setStatus('Failed to load Gaza: '+e.message, true); alert(e.message); }
     });
-
     document.getElementById('btnWB').addEventListener('click', async ()=>{
       try {
         await ensureTemplates();
@@ -241,6 +280,8 @@ This map is meant for you to get a better sense of the size of Gaza and the West
       } catch(e){ setStatus('Failed to load West Bank: '+e.message, true); alert(e.message); }
     });
 
+    // POI
+    const poiLayerRef = poiLayer; // alias
     document.getElementById('btnPOI').addEventListener('click', async ()=>{
       const b = map.getBounds();
       const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(',');
@@ -254,40 +295,75 @@ This map is meant for you to get a better sense of the size of Gaza and the West
           method:'POST', body:query, headers:{'Content-Type':'text/plain;charset=UTF-8'}
         }).then(r=>r.json());
 
-        poiLayer.clearLayers();
+        poiLayerRef.clearLayers();
         let n=0;
         for (const el of data.elements) {
           let lat=el.lat, lon=el.lon;
           if (!lat && el.center) { lat=el.center.lat; lon=el.center.lon; }
           if (lat && lon) {
             const name=el.tags?.name||'(unnamed)'; const type=el.tags?.amenity||'';
-            L.circleMarker([lat,lon], {radius:4}).bindPopup(`<b>${name}</b><br>${type}`).addTo(poiLayer); n++;
+            L.circleMarker([lat,lon], {radius:4}).bindPopup(`<b>${name}</b><br>${type}`).addTo(poiLayerRef); n++;
           }
         }
         if (n===0) return alert('No schools/libraries found in view. Zoom in and try again.');
-        poiLayer.addTo(map);
+        poiLayerRef.addTo(map);
         setStatus(`Loaded ${n} POI`);
       } catch(e){ setStatus('POI load failed: '+e.message, true); alert(e.message); }
     });
 
-    // === Modal wiring ===
+    // Presets
+    const presetSel = document.getElementById('presetSelect');
+    (CFG.presets || []).forEach((p,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = p.name;
+      presetSel.appendChild(opt);
+    });
+    presetSel.addEventListener('change', e=>{
+      const idx = e.target.value;
+      if (idx === '') return;
+      const p = CFG.presets[idx];
+      if (p && Array.isArray(p.center)) map.setView(p.center, p.zoom || 11);
+    });
+
+    // Sidebar (Markdown loader)
+    const sidebarBody = document.getElementById('sidebarBody');
+    const tabs = document.querySelectorAll('.tab-btn');
+    async function renderTab(tab){
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.tab===tab));
+      const path = (tab==='about') ? MD.about : (tab==='data') ? MD.data : MD.resources;
+      try {
+        const md = await fetchMD(path);
+        sidebarBody.innerHTML = marked.parse(md);
+      } catch (e) {
+        sidebarBody.innerHTML = `<p style="color:#b00020;">Failed to load ${path}: ${e.message}</p>`;
+      }
+    }
+    tabs.forEach(btn => btn.addEventListener('click', ()=> renderTab(btn.dataset.tab)));
+    renderTab('about'); // initial
+
+    // Modal (ReadMe from Markdown)
     const modal = document.getElementById('readmeModal');
     const btnReadme = document.getElementById('btnReadme');
     const btnClose = document.getElementById('modalClose');
-
     function openModal(){ modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); }
     function closeModal(){ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); }
-
     btnReadme.addEventListener('click', openModal);
     btnClose.addEventListener('click', closeModal);
     modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
     window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
 
-    // Auto-open once per visitor, but can be reopened via the ReadMe button
-    if (!localStorage.getItem('readmeShown')) {
-      openModal();
-      localStorage.setItem('readmeShown', 'true');
-    }
+    (async ()=>{
+      try {
+        const md = await fetchMD(MD.readme);
+        document.getElementById('modalBody').innerHTML = marked.parse(md);
+      } catch (e) {
+        document.getElementById('modalBody').innerHTML = `<p style="color:#b00020;">Failed to load ${MD.readme}: ${e.message}</p>`;
+      }
+      if (!localStorage.getItem('readmeShown')) {
+        openModal();
+        localStorage.setItem('readmeShown','true');
+      }
+    })();
 
     console.log('Using RAW URLs:', GAZA_URL, WB_URL);
   </script>
