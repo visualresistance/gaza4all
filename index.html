@@ -55,23 +55,19 @@
     .row { display: flex; flex-direction: column; gap: 6px; }
     .small { font-size: 11px; color: #1f2937; }
 
-    /* Compact select */
     select {
       width: 100%; padding: 7px 10px;
-      border-radius: 9px; border: 1px solid rgba(0,0,0,0.15); background: #fff;
-      font-size: 13px;
+      border-radius: 9px; border: 1px solid rgba(0,0,0,0.15); background: #fff; font-size: 13px;
     }
 
-    /* Status line */
     .status { font-size: 11px; color: #374151; padding-top: 2px; }
 
-    /* Hide/show right sidebar */
+    /* Right sidebar toggle */
     body.sidebar-hidden .sidebar { display: none; }
-    body.sidebar-hidden .info-pill { right: 10px; } /* move pill to edge when hidden */
+    body.sidebar-hidden .info-pill { right: 10px; }
 
-    /* Hide/show left controls */
+    /* Left controls hide/show */
     body.controls-hidden .controls { display: none; }
-    /* Tiny reveal button when controls are hidden */
     #showControlsBtn {
       position: absolute; z-index: 1001; left: 10px; bottom: 10px;
       display: none;
@@ -89,7 +85,7 @@
     .info-pill .name { font-weight: 600; }
     .info-pill .num { font-variant-numeric: tabular-nums; }
 
-    /* Right sidebar (content only; no extra header text) */
+    /* Right sidebar (tabs only) */
     .sidebar {
       position: absolute; z-index: 1000; top: 0; right: 0; height: 100%; width: var(--panel-w);
       background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column;
@@ -110,8 +106,7 @@
 
     /* Splash overlay */
     .splash-overlay {
-      position: fixed; inset: 0; z-index: 1600;
-      background: rgba(0,0,0,0.5);
+      position: fixed; inset: 0; z-index: 1600; background: rgba(0,0,0,0.5);
       display: none; align-items: center; justify-content: center; padding: 16px;
     }
     .splash-overlay.show { display: flex; }
@@ -126,7 +121,6 @@
     .splash-body { font-size: 14px; line-height: 1.5; }
     .splash-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 6px 0 10px; }
 
-    /* Small screens */
     @media (max-width: 680px) {
       .controls { width: 190px; }
       .info-pill { right: 10px; }
@@ -147,7 +141,6 @@
         <option value="">— Jump to a city —</option>
       </select>
       <button class="btn" id="toggleSidebar" title="Show/Hide right panel">Full Map</button>
-      <!-- NEW: hide entire control bar -->
       <button class="btn" id="hideControls" title="Hide left control bar">Hide buttons</button>
     </div>
     <div class="status" id="status">Ready</div>
@@ -169,9 +162,7 @@
       <button class="tab-btn" data-tab="data">Data</button>
       <button class="tab-btn" data-tab="resources">Resources</button>
     </div>
-    <div class="sidebar-body" id="sidebarBody">
-      <!-- Markdown injected here -->
-    </div>
+    <div class="sidebar-body" id="sidebarBody"></div>
   </aside>
 
   <!-- Splash -->
@@ -191,16 +182,17 @@
     const START_CENTER = (CFG.start && Array.isArray(CFG.start.center)) ? CFG.start.center : [34.0522, -118.2437];
     const START_ZOOM   = (CFG.start && CFG.start.zoom) ? CFG.start.zoom : 11;
 
-    // Markdown paths (relative)
-    const MD = CFG.md || {
+    // Markdown paths (future-proof merge with defaults)
+    const DEFAULT_MD = {
       about:     'content/about.md',
       data:      'content/data.md',
       resources: 'content/resources.md',
-      readme:    'content/readme.md',   // not used now, kept for compatibility
-      splash:    'content/splash.md'    // NEW splash content
+      readme:    'content/readme.md',
+      splash:    'content/splash.md'
     };
+    const MD = { ...DEFAULT_MD, ...(CFG.md || {}) };
 
-    // Repo (for GeoJSON)
+    // Repo (for GeoJSON) — allows overrides via config.js
     const OWNER  = (CFG.repo && CFG.repo.owner)  || 'visualresistance';
     const REPO   = (CFG.repo && CFG.repo.name)   || 'gaza4all';
     const BRANCH = (CFG.repo && CFG.repo.branch) || 'main';
@@ -236,7 +228,6 @@
     const hideControls = document.getElementById('hideControls');
     const showControlsBtn = document.getElementById('showControlsBtn');
 
-    // init from saved preference
     if (localStorage.getItem('controlsHidden') === 'true') {
       document.body.classList.add('controls-hidden');
       showControlsBtn.setAttribute('aria-pressed','true');
@@ -423,7 +414,7 @@
     tabs.forEach(btn => btn.addEventListener('click', ()=> renderTab(btn.dataset.tab)));
     renderTab('about'); // initial
 
-    // Splash (Markdown + optional image via markdown in splash.md)
+    // Splash (Markdown + optional image)
     const splash = document.getElementById('splash');
     const splashBody = document.getElementById('splashBody');
     const splashClose = document.getElementById('splashClose');
@@ -442,15 +433,16 @@
 
     (async ()=>{
       try {
-        const md = await fetchMD(MD.splash);
+        const md = await fetchMD(MD.splash || DEFAULT_MD.splash);
         splashBody.innerHTML = marked.parse(md);
       } catch (e) {
-        splashBody.innerHTML = `<p style="color:#b00020;">Failed to load ${MD.splash}: ${e.message}</p>`;
+        splashBody.innerHTML = `<p style="color:#b00020;">Failed to load ${MD.splash || DEFAULT_MD.splash}: ${e.message}</p>`;
       }
-      // Show splash on first visit only
-      if (!localStorage.getItem('splashShown')) {
+      // Show on first visit OR if URL has ?splash=1
+      const forceSplash = /(?:\\?|&)splash=1\\b/.test(location.search);
+      if (forceSplash || !localStorage.getItem('splashShown')) {
         openSplash();
-        localStorage.setItem('splashShown','true');
+        if (!forceSplash) localStorage.setItem('splashShown','true');
       }
     })();
 
@@ -459,5 +451,4 @@
 </body>
 </html>
 
-  
 
