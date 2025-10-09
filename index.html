@@ -26,7 +26,7 @@
       --panel-w: 340px;         /* right sidebar width */
       --border: #e5e7eb;
       --shadow: 0 2px 10px rgba(0,0,0,.08);
-      --pal-green: 0,122,61;    /* Palestine green (approx #007A3D) */
+      --pal-green: 0,122,61;    /* Palestine green (~#007A3D) */
     }
     html, body, #map { height: 100%; margin: 0; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -34,8 +34,8 @@
     /* Slim vertical control bar (left) */
     .controls {
       position: absolute; z-index: 1000; top: 10px; left: 10px;
-      width: 220px;                       /* slimmer */
-      background: rgba(var(--pal-green), 0.10); /* green tint */
+      width: 220px;
+      background: rgba(var(--pal-green), 0.10);
       border: 1px solid rgba(var(--pal-green), 0.28);
       border-radius: 12px;
       padding: 10px;
@@ -65,9 +65,20 @@
     /* Status line */
     .status { font-size: 11px; color: #374151; padding-top: 2px; }
 
-    /* Sidebar toggle class effects */
+    /* Hide/show right sidebar */
     body.sidebar-hidden .sidebar { display: none; }
-    body.sidebar-hidden .info-pill { right: 10px; } /* move pill to the edge when hidden */
+    body.sidebar-hidden .info-pill { right: 10px; } /* move pill to edge when hidden */
+
+    /* Hide/show left controls */
+    body.controls-hidden .controls { display: none; }
+    /* Tiny reveal button when controls are hidden */
+    #showControlsBtn {
+      position: absolute; z-index: 1001; left: 10px; bottom: 10px;
+      display: none;
+      background: rgba(255,255,255,0.95); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; font-size: 13px; cursor: pointer; box-shadow: var(--shadow);
+    }
+    body.controls-hidden #showControlsBtn { display: block; }
 
     /* Area pill */
     .info-pill {
@@ -78,18 +89,16 @@
     .info-pill .name { font-weight: 600; }
     .info-pill .num { font-variant-numeric: tabular-nums; }
 
-    /* Right sidebar (content) */
+    /* Right sidebar (content only; no extra header text) */
     .sidebar {
       position: absolute; z-index: 1000; top: 0; right: 0; height: 100%; width: var(--panel-w);
       background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column;
       box-shadow: -6px 0 20px rgba(0,0,0,.06);
     }
     .sidebar-header {
-      display: flex; align-items: center; justify-content: space-between; padding: 10px 12px;
+      display: flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 10px 12px;
       border-bottom: 1px solid var(--border); background: #fafafa;
     }
-    .sidebar-title { font-size: 14px; font-weight: 600; margin: 0; }
-    .tabs { display: flex; gap: 6px; }
     .tab-btn {
       border: 1px solid #d1d5db; background: #fff; padding: 6px 10px; border-radius: 16px; font-size: 12px; cursor: pointer;
     }
@@ -99,24 +108,25 @@
     .sidebar-body p, .sidebar-body li { font-size: 13px; line-height: 1.45; }
     .sidebar-body a { color: #111; }
 
-    /* Modal */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: none; align-items: center; justify-content: center; z-index: 1500; padding: 16px;
+    /* Splash overlay */
+    .splash-overlay {
+      position: fixed; inset: 0; z-index: 1600;
+      background: rgba(0,0,0,0.5);
+      display: none; align-items: center; justify-content: center; padding: 16px;
     }
-    .modal-overlay.show { display: flex; }
-    .modal-card {
-      background: #ffffff; border-radius: 12px; border: 1px solid var(--border);
-      max-width: 600px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-      padding: 18px 16px 14px;
+    .splash-overlay.show { display: flex; }
+    .splash-card {
+      background: #ffffff; border-radius: 14px; border: 1px solid var(--border);
+      max-width: 720px; width: 100%; box-shadow: 0 14px 40px rgba(0,0,0,0.22);
+      padding: 18px 18px 14px;
     }
-    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-    .modal-title { font-size: 16px; font-weight: 600; margin: 0; }
-    .modal-close { background: transparent; border: none; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px; }
-    .modal-body { font-size: 14px; color: #222; line-height: 1.45; }
-    .modal-body :is(h1,h2,h3,h4,p,ul,ol){ margin: 0 0 10px; }
+    .splash-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .splash-title { font-size: 18px; font-weight: 700; margin: 0; }
+    .splash-close { background:#111; color:#fff; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
+    .splash-body { font-size: 14px; line-height: 1.5; }
+    .splash-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 6px 0 10px; }
 
-    /* Small screens: make control bar even slimmer */
+    /* Small screens */
     @media (max-width: 680px) {
       .controls { width: 190px; }
       .info-pill { right: 10px; }
@@ -130,17 +140,21 @@
   <div class="controls">
     <h4>Controls</h4>
     <div class="row">
-      <button class="btn" id="btnReadme">ReadMe</button>
       <button class="btn" id="btnGaza">Add Gaza here</button>
       <button class="btn" id="btnWB">Add West Bank here</button>
       <button class="btn" id="btnPOI">Load Schools & Libraries (in view)</button>
       <select id="presetSelect" title="Jump to a city preset">
         <option value="">— Jump to a city —</option>
       </select>
-      <button class="btn" id="toggleSidebar" title="Show/Hide sidebar">Full Map</button>
+      <button class="btn" id="toggleSidebar" title="Show/Hide right panel">Full Map</button>
+      <!-- NEW: hide entire control bar -->
+      <button class="btn" id="hideControls" title="Hide left control bar">Hide buttons</button>
     </div>
     <div class="status" id="status">Ready</div>
   </div>
+
+  <!-- Tiny reveal button when controls hidden -->
+  <button id="showControlsBtn" aria-pressed="false">Show sidebar</button>
 
   <!-- Area info -->
   <div class="info-pill" id="infoPill" style="display:none;">
@@ -148,29 +162,26 @@
     <div>Geodesic area: <span class="num" id="pillArea">—</span> km²</div>
   </div>
 
-  <!-- Sidebar -->
+  <!-- Right sidebar (tabs only) -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <h3 class="sidebar-title">About & resources</h3>
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="about">About</button>
-        <button class="tab-btn" data-tab="data">Data</button>
-        <button class="tab-btn" data-tab="resources">Resources</button>
-      </div>
+      <button class="tab-btn active" data-tab="about">About</button>
+      <button class="tab-btn" data-tab="data">Data</button>
+      <button class="tab-btn" data-tab="resources">Resources</button>
     </div>
     <div class="sidebar-body" id="sidebarBody">
       <!-- Markdown injected here -->
     </div>
   </aside>
 
-  <!-- Modal -->
-  <div class="modal-overlay" id="readmeModal" aria-hidden="true" role="dialog" aria-modal="true">
-    <div class="modal-card" role="document">
-      <div class="modal-header">
-        <h3 class="modal-title">About this map</h3>
-        <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+  <!-- Splash -->
+  <div class="splash-overlay" id="splash">
+    <div class="splash-card">
+      <div class="splash-head">
+        <h3 class="splash-title">Welcome</h3>
+        <button class="splash-close" id="splashClose">Enter map</button>
       </div>
-      <div class="modal-body" id="modalBody"><!-- Markdown injected --></div>
+      <div class="splash-body" id="splashBody"><!-- markdown goes here --></div>
     </div>
   </div>
 
@@ -180,15 +191,16 @@
     const START_CENTER = (CFG.start && Array.isArray(CFG.start.center)) ? CFG.start.center : [34.0522, -118.2437];
     const START_ZOOM   = (CFG.start && CFG.start.zoom) ? CFG.start.zoom : 11;
 
-    // Markdown paths (relative to site root)
+    // Markdown paths (relative)
     const MD = CFG.md || {
       about:     'content/about.md',
       data:      'content/data.md',
       resources: 'content/resources.md',
-      readme:    'content/readme.md'
+      readme:    'content/readme.md',   // not used now, kept for compatibility
+      splash:    'content/splash.md'    // NEW splash content
     };
 
-    // Repo (for GeoJSON) — can be this repo or others
+    // Repo (for GeoJSON)
     const OWNER  = (CFG.repo && CFG.repo.owner)  || 'visualresistance';
     const REPO   = (CFG.repo && CFG.repo.name)   || 'gaza4all';
     const BRANCH = (CFG.repo && CFG.repo.branch) || 'main';
@@ -202,7 +214,7 @@
     }).addTo(map);
     const layerControl = L.control.layers({ "OpenStreetMap": osm }, {}, { collapsed:false }).addTo(map);
 
-    // Sidebar toggle (Full Map ↔ Show Sidebar)
+    // Right sidebar toggle (Full Map ↔ Show Sidebar)
     const toggleBtn = document.getElementById('toggleSidebar');
     if (localStorage.getItem('sidebarHidden') === 'true') {
       document.body.classList.add('sidebar-hidden');
@@ -217,6 +229,28 @@
       toggleBtn.textContent = hidden ? 'Show Sidebar' : 'Full Map';
       toggleBtn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
       localStorage.setItem('sidebarHidden', hidden ? 'true' : 'false');
+      requestAnimationFrame(() => map.invalidateSize());
+    });
+
+    // Left controls hide/show
+    const hideControls = document.getElementById('hideControls');
+    const showControlsBtn = document.getElementById('showControlsBtn');
+
+    // init from saved preference
+    if (localStorage.getItem('controlsHidden') === 'true') {
+      document.body.classList.add('controls-hidden');
+      showControlsBtn.setAttribute('aria-pressed','true');
+    }
+    hideControls.addEventListener('click', () => {
+      document.body.classList.add('controls-hidden');
+      localStorage.setItem('controlsHidden', 'true');
+      showControlsBtn.setAttribute('aria-pressed','true');
+      requestAnimationFrame(() => map.invalidateSize());
+    });
+    showControlsBtn.addEventListener('click', () => {
+      document.body.classList.remove('controls-hidden');
+      localStorage.setItem('controlsHidden', 'false');
+      showControlsBtn.setAttribute('aria-pressed','false');
       requestAnimationFrame(() => map.invalidateSize());
     });
 
@@ -249,7 +283,7 @@
       }
     }
 
-    // Fetch JSON + Markdown
+    // Fetch helpers
     async function fetchJSON(url){
       const r = await fetch(url, { cache:'no-store' });
       if(!r.ok) throw new Error(`HTTP ${r.status} @ ${url}`);
@@ -389,27 +423,34 @@
     tabs.forEach(btn => btn.addEventListener('click', ()=> renderTab(btn.dataset.tab)));
     renderTab('about'); // initial
 
-    // Modal (ReadMe from Markdown)
-    const modal = document.getElementById('readmeModal');
-    const btnReadme = document.getElementById('btnReadme');
-    const btnClose = document.getElementById('modalClose');
-    function openModal(){ modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); }
-    function closeModal(){ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); }
-    btnReadme.addEventListener('click', openModal);
-    btnClose.addEventListener('click', closeModal);
-    modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
-    window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
+    // Splash (Markdown + optional image via markdown in splash.md)
+    const splash = document.getElementById('splash');
+    const splashBody = document.getElementById('splashBody');
+    const splashClose = document.getElementById('splashClose');
+
+    function openSplash(){
+      splash.classList.add('show');
+      splash.setAttribute('aria-hidden','false');
+    }
+    function closeSplash(){
+      splash.classList.remove('show');
+      splash.setAttribute('aria-hidden','true');
+    }
+    splashClose.addEventListener('click', closeSplash);
+    splash.addEventListener('click', (e)=>{ if(e.target === splash) closeSplash(); });
+    window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeSplash(); });
 
     (async ()=>{
       try {
-        const md = await fetchMD(MD.readme);
-        document.getElementById('modalBody').innerHTML = marked.parse(md);
+        const md = await fetchMD(MD.splash);
+        splashBody.innerHTML = marked.parse(md);
       } catch (e) {
-        document.getElementById('modalBody').innerHTML = `<p style="color:#b00020;">Failed to load ${MD.readme}: ${e.message}</p>`;
+        splashBody.innerHTML = `<p style="color:#b00020;">Failed to load ${MD.splash}: ${e.message}</p>`;
       }
-      if (!localStorage.getItem('readmeShown')) {
-        openModal();
-        localStorage.setItem('readmeShown','true');
+      // Show splash on first visit only
+      if (!localStorage.getItem('splashShown')) {
+        openSplash();
+        localStorage.setItem('splashShown','true');
       }
     })();
 
@@ -417,7 +458,6 @@
   </script>
 </body>
 </html>
-
 
   
 
